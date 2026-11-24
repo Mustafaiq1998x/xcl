@@ -4432,15 +4432,22 @@ fn gpu_triangle_pair_and_box16_nodes() {
         w(&mut mem, 16 + 12 * k, &[h(-1.0) | h(-1.0) << 16, h(4.5) | h(1.0) << 16, h(1.0) | h(5.5) << 16]);
     }
     let root = 4u32; // box16 at 0
+    // A second root (box32) with the same children and exactly representable bounds.
+    // All node formats are exercised in different lanes of the same dispatch.
+    let root32 = (0x100u32 >> 3) | 5;
+    w(&mut mem, 0x100, &[t0, t1, u32::MAX, u32::MAX]);
+    for k in 0..2 {
+        w(&mut mem, 0x110 + 24 * k, &ff(&[-1.0, -1.0, 4.5, 1.0, 1.0, 5.5]));
+    }
     let mut code = encode("IMAGE_BVH_INTERSECT_RAY", "ENC_MIMG", &[("VDATA", 100), ("VADDR", 0), ("SRSRC", 2), ("DMASK", 15)], None).unwrap();
     code.extend(encode("S_ENDPGM", "ENC_SOPP", &[], None).unwrap());
     let mut st = KernelState::default();
     st.sgpr[8..12].copy_from_slice(&[(base >> 8) as u32, 1 << 31, u32::MAX, 0]);
     let mut r = bvh::tests::rng(5);
-    let nodes = [root, t0, t1];
+    let nodes = [root, t0, t1, root32];
     let mut rays = vec![];
     for (l, v) in st.vgpr.iter_mut().enumerate() {
-        let node = nodes[l % 3];
+        let node = nodes[l % nodes.len()];
         let o = [r(-1.5, 1.5), r(-1.5, 1.5), 0.0];
         let d = [r(-0.1, 0.1), r(-0.1, 0.1), 1.0];
         let inv = d.map(|x| 1.0 / x);
@@ -4456,8 +4463,8 @@ fn gpu_triangle_pair_and_box16_nodes() {
     for (l, &(node, o, d, inv)) in rays.iter().enumerate() {
         let gpu: [u32; 4] = res.vgpr[l][100..104].try_into().unwrap();
         let cpu = bvh::intersect_node(&data, node, 100.0, o, d, inv, true);
-        if node == root {
-            assert_eq!(gpu, cpu, "lane {l}: box16");
+        if node == root || node == root32 {
+            assert_eq!(gpu, cpu, "lane {l}: node {node:#x}");
             continue;
         }
         let (g, c) = (gpu.map(f32::from_bits), cpu.map(f32::from_bits));

@@ -356,3 +356,19 @@ fn multi_window_mem_format_and_bvh_validate() {
         }
     }
 }
+
+#[test]
+fn bvh_shared_box_size_probe() {
+    let mut code = Vec::new();
+    for i in 0..8u64 {
+        code.extend(encode("IMAGE_BVH_INTERSECT_RAY", "ENC_MIMG", &[("VDATA", 32 + 4 * i), ("VADDR", 0), ("SRSRC", 2), ("DMASK", 15)], None).unwrap());
+    }
+    code.extend(encode("S_ENDPGM", "ENC_SOPP", &[], None).unwrap());
+    for windows in [1u32, 4] {
+        for wave64 in [false, true] {
+            let bytes = translate(&code, KernelOptions { wave64, split: false, mem_windows: windows, sampler_base: 0 }).unwrap();
+            super::validate::validate(&bytes).expect("BVH fixture must validate");
+            println!("BVH_SIZE {}-{}-0 bytes={}", windows, wave64 as u8, bytes.len());
+        }
+    }
+}
